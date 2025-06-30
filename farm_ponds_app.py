@@ -36,15 +36,19 @@ def fetch_ponds_data(query_params):
             }
         except Exception as e:
             st.error(f"Error creating payload: {str(e)}")
-            return pd.DataFrame()
+            return pd.DataFrame(), ""
             
         response = requests.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
         
-        # Extract the data array from the response
-        if isinstance(data, dict) and 'data' in data:
-            data = data['data']
+        # Extract the data array and cypher query from the response
+        cypher_query = ""
+        if isinstance(data, dict):
+            if 'data' in data:
+                data = data['data']
+            if 'cypher' in data:
+                cypher_query = data['cypher']
         
         # Convert to DataFrame
         if isinstance(data, list) and len(data) > 0:
@@ -63,11 +67,11 @@ def fetch_ponds_data(query_params):
                 except Exception as e:
                     st.warning(f"Could not convert column '{col}' to datetime: {str(e)}")
                     continue
-            return df
-        return pd.DataFrame()
+            return df, cypher_query
+        return pd.DataFrame(), cypher_query
     except Exception as e:
         st.error(f"Error fetching data: {str(e)}")
-        return pd.DataFrame()
+        return pd.DataFrame(), ""
 
 def main():
     # Main app content
@@ -93,49 +97,18 @@ def main():
     
     # Fetch data with caching
     with st.spinner('Loading data...'):
-        df = fetch_ponds_data(query_params)
+        df, cypher_query = fetch_ponds_data(query_params)
+    
+    # Display the Cypher query in an expandable section
+    if cypher_query:
+        with st.expander("View Generated Cypher Query"):
+            st.code(cypher_query, language="cypher")
     
     if not df.empty:
         # Display basic stats
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total Ponds", len(df))
-        
-        # Add filters in sidebar
-        st.sidebar.header("Filters")
-        
-        # Dynamic filters for each column
-        for column in df.select_dtypes(include=['object']).columns:
-            unique_vals = df[column].unique()
-            if len(unique_vals) < 20:  # Only show filter for columns with limited unique values
-                selected = st.sidebar.multiselect(
-                    f"Filter by {column}",
-                    options=unique_vals,
-                    default=unique_vals.tolist()
-                )
-                if len(selected) > 0:
-                    df = df[df[column].isin(selected)]
-        
-        # Date range filter for date columns (exclude 'DOC' as it's an integer)
-        date_columns = [col for col in df.columns 
-                       if 'date' in col.lower() 
-                       and 'doc' not in col.lower()]
-        if date_columns:
-            date_col = st.sidebar.selectbox("Filter by date column", date_columns)
-            min_date = df[date_col].min()
-            max_date = df[date_col].max()
-            
-            date_range = st.sidebar.date_input(
-                "Select date range",
-                value=(min_date, max_date),
-                min_value=min_date,
-                max_value=max_date
-            )
-            
-            if len(date_range) == 2:
-                start_date, end_date = date_range
-                df = df[(df[date_col].dt.date >= start_date) & 
-                       (df[date_col].dt.date <= end_date)]
         
         # Show the data table
         st.subheader("Ponds Data")
