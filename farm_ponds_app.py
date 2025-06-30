@@ -45,10 +45,22 @@ def fetch_ponds_data(query_params):
         # Extract the data array and cypher query from the response
         cypher_query = ""
         if isinstance(data, dict):
-            if 'data' in data:
-                data = data['data']
+            # First check for cypher in the root level
             if 'cypher' in data:
                 cypher_query = data['cypher']
+            # Then check if there's a nested 'response' object with cypher
+            elif 'response' in data and isinstance(data['response'], dict) and 'cypher' in data['response']:
+                cypher_query = data['response']['cypher']
+            
+            # Get the data array
+            if 'data' in data:
+                data = data['data']
+            elif 'response' in data and 'data' in data['response']:
+                data = data['response']['data']
+            
+            # Debug: Print the structure if no cypher found
+            if not cypher_query:
+                print("No cypher query found in response. Response keys:", data.keys() if isinstance(data, dict) else 'Not a dict')
         
         # Convert to DataFrame
         if isinstance(data, list) and len(data) > 0:
@@ -100,9 +112,13 @@ def main():
         df, cypher_query = fetch_ponds_data(query_params)
     
     # Display the Cypher query in an expandable section
-    if cypher_query:
+    if cypher_query and cypher_query.strip():
         with st.expander("View Generated Cypher Query"):
             st.code(cypher_query, language="cypher")
+    elif not df.empty:
+        st.warning("No Cypher query was returned in the API response.")
+        if st.checkbox("Show raw response for debugging"):
+            st.json(data)  # Show the raw response for debugging
     
     if not df.empty:
         # Display basic stats
