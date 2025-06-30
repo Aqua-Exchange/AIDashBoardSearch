@@ -2,6 +2,59 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
+import hashlib
+
+# Hardcoded credentials (in a real app, use a secure authentication system)
+USER_CREDENTIALS = {
+    "admin": {
+        "password": "c1a6766d5c868fb27c4750be42743a2d6e5a22b087f3712dd04cd149410c4c41",  # sha256 of 'ax@4321'
+        "name": "admin"
+    },
+    "user": {
+        "password": "c1a6766d5c868fb27c4750be42743a2d6e5a22b087f3712dd04cd149410c4c41",  # sha256 of 'ax@4321'
+        "name": "user"
+    }
+}
+
+def hash_password(password):
+    """Hash a password for storing."""
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def verify_login(username, password):
+    """Verify user credentials."""
+    if username in USER_CREDENTIALS:
+        hashed_password = hash_password(password)
+        if USER_CREDENTIALS[username]["password"] == hashed_password:
+            return True, USER_CREDENTIALS[username]["name"]
+    return False, ""
+
+def login_page():
+    """Render the login page."""
+    st.title("🔐 Login to AquaExchange Dashboard")
+    
+    with st.form("login_form"):
+        username = st.text_input("Username")
+        password = st.text_input("Password", type="password")
+        submitted = st.form_submit_button("Login")
+        
+        if submitted:
+            if not username or not password:
+                st.error("Please enter both username and password")
+            else:
+                is_authenticated, user_name = verify_login(username, password)
+                if is_authenticated:
+                    st.session_state["authenticated"] = True
+                    st.session_state["username"] = username
+                    st.session_state["user_name"] = user_name
+                    st.rerun()
+                else:
+                    st.error("Invalid username or password")
+    
+    st.markdown("""
+    **Demo Credentials:**
+    - Username: admin / user
+    - Password: password
+    """)
 
 # Set page config
 st.set_page_config(
@@ -64,8 +117,29 @@ def fetch_ponds_data(query_params):
         return pd.DataFrame()
 
 def main():
-    st.title("🌊 Farm Ponds Dashboard")
+    # Initialize session state
+    if "authenticated" not in st.session_state:
+        st.session_state.authenticated = False
+    if "username" not in st.session_state:
+        st.session_state.username = ""
+    if "user_name" not in st.session_state:
+        st.session_state.user_name = ""
+    
+    # Check if user is authenticated
+    if not st.session_state.authenticated:
+        login_page()
+        return
+    
+    # Main app content
+    st.title(f"🌊 Welcome, {st.session_state.user_name}")
     st.markdown("View and filter farm ponds data")
+    
+    # Add logout button in sidebar
+    if st.sidebar.button("🚪 Logout"):
+        st.session_state.authenticated = False
+        st.session_state.username = ""
+        st.session_state.user_name = ""
+        st.rerun()
     
     # Default query parameters
     default_query = 'Show Medium Risky ponds'
