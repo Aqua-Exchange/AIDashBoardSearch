@@ -23,48 +23,68 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def fetch_ponds_data(query_params):
-    """Fetch data from the farm ponds API"""
+def fetch_ponds_data(query_params, skip=0, limit=100, applied_filters=None, total_count=None):
+    """Fetch data from the farm ponds API with pagination support"""
     url = "https://ax-ai-reports-912635809422.asia-south1.run.app/api/getFarmPonds"
     
     try:
-        # Create the payload with the query parameters
+        # Create the payload with the query parameters and pagination
         try:
             payload = {
-                "api_name": "getFarmPonds",
-                "query": query_params
+                "query": query_params,
+                "skip": skip,
+                "limit": limit
             }
+            if total_count:
+                payload["totalCount"] = total_count
+            # Add appliedFilters only if provided and not empty
+            if applied_filters:
+                payload["appliedFilters"] = applied_filters
         except Exception as e:
             st.error(f"Error creating payload: {str(e)}")
-            return pd.DataFrame(), ""
+            return pd.DataFrame(), "", 0, []
             
         response = requests.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
         
-        # Extract the data array and cypher query from the response
+        # Extract the data array, cypher query, and total count from the response
         cypher_query = ""
+        response_filters = []
+        
         if isinstance(data, dict):
-            # First check for cypher in the root level
+            # Get cypher query
             if 'cypher' in data:
                 cypher_query = data['cypher']
-            # Then check if there's a nested 'response' object with cypher
             elif 'response' in data and isinstance(data['response'], dict) and 'cypher' in data['response']:
                 cypher_query = data['response']['cypher']
             
+            # Get total count
+            if 'totalCount' in data:
+                total_count = int(data['totalCount'])
+                st.session_state.total_count = total_count
+            elif 'response' in data and 'totalCount' in data['response']:
+                total_count = int(data['response']['totalCount'])
+                st.session_state.total_count = total_count
+            
+            # Get applied filters if available
+            if 'appliedFilters' in data and data['appliedFilters']:
+                response_filters = data['appliedFilters']
+                st.session_state.applied_filters = response_filters
+            
             # Get the data array
             if 'data' in data:
-                data = data['data']
+                data_array = data['data']
             elif 'response' in data and 'data' in data['response']:
-                data = data['response']['data']
-            
-            # Debug: Print the structure if no cypher found
-            if not cypher_query:
-                print("No cypher query found in response. Response keys:", data.keys() if isinstance(data, dict) else 'Not a dict')
+                data_array = data['response']['data']
+            else:
+                data_array = []
+        else:
+            data_array = []
         
         # Convert to DataFrame
-        if isinstance(data, list) and len(data) > 0:
-            df = pd.DataFrame(data)
+        if isinstance(data_array, list) and len(data_array) > 0:
+            df = pd.DataFrame(data_array)
             # Convert date columns to datetime if they exist (exclude 'DOC' as it's an integer)
             date_columns = [col for col in df.columns 
                           if any(x in col.lower() for x in ['date', 'lastupdated']) 
@@ -79,16 +99,24 @@ def fetch_ponds_data(query_params):
                 except Exception as e:
                     st.warning(f"Could not convert column '{col}' to datetime: {str(e)}")
                     continue
-            return df, cypher_query
-        return pd.DataFrame(), cypher_query
+            return df, cypher_query, total_count, response_filters
+        return pd.DataFrame(), cypher_query, total_count, response_filters
     except Exception as e:
         st.error(f"Error fetching data: {str(e)}")
-        return pd.DataFrame(), ""
+        return pd.DataFrame(), "", 0, []
 
 def main():
     # Main app content
     st.title("🌊 AquaExchange Dashboard")
     st.markdown("View and filter farm ponds data")
+    
+    # Initialize session state for pagination
+    if 'page' not in st.session_state:
+        st.session_state.page = 0
+    if 'per_page' not in st.session_state:
+        st.session_state.per_page = 100
+    if 'applied_filters' not in st.session_state:
+        st.session_state.applied_filters = None
     
     # Default query parameters
     default_query = 'ponds with > 80 doc but not done any harvest'
@@ -106,36 +134,98 @@ def main():
     with col1:
         if st.button("🔄 Fetch Data"):
             st.cache_data.clear()
+            st.session_state.page = 0  # Reset to first page on new search
+            st.session_state.applied_filters = None
+            st.session_state.total_count = None
     
-    # Fetch data with caching
+    # Calculate skip based on current page
+    skip = st.session_state.page * st.session_state.per_page
+    
+    # Fetch data with caching and pagination
     with st.spinner('Loading data...'):
-        df, cypher_query = fetch_ponds_data(query_params)
+        df, cypher_query, total_count, response_filters = fetch_ponds_data(
+            query_params,
+            skip=skip,
+            limit=st.session_state.per_page,
+            total_count=st.session_state.get('total_count'),
+            applied_filters=st.session_state.get('applied_filters')
+        )
+        
+        # Store applied filters from the response if available
+        if response_filters:
+            st.session_state.applied_filters = response_filters
     
     # Display the Cypher query in an expandable section
     if cypher_query and cypher_query.strip():
         with st.expander("View Generated Cypher Query"):
             st.code(cypher_query, language="cypher")
-    elif not df.empty:
-        st.warning("No Cypher query was returned in the API response.")
-        if st.checkbox("Show raw response for debugging"):
-            st.json(data)  # Show the raw response for debugging
     
     if not df.empty:
+        # Calculate pagination info
+        if hasattr(st.session_state, 'total_count') and st.session_state.total_count > 0:
+            total_count = st.session_state.total_count
+            
+        total_pages = (total_count + st.session_state.per_page - 1) // st.session_state.per_page
+        start_record = skip + 1
+        end_record = min(skip + len(df), total_count)
+        
+        
+        
         # Display basic stats
         col1, col2, col3 = st.columns(3)
         with col1:
-            st.metric("Total Ponds", len(df))
+            st.metric("Total Ponds", f"{total_count:,}")
         
-        # Show the data table
-        st.subheader("Ponds Data")
-        st.dataframe(df, use_container_width=True, height=600)
+        # Add index column based on pagination
+        if not df.empty:
+            # Create a new column with 1-based index based on current page and items per page
+            df_display = df.copy()
+            start_idx = st.session_state.page * st.session_state.per_page + 1
+            df_display.index = range(start_idx, start_idx + len(df))
+            
+            # Show the data table with index
+            st.subheader("Ponds Data")
+            st.dataframe(df_display, use_container_width=True, height=600)
+        
+        # Pagination controls with Rows per page selector
+        col1, col2, col3, col4 = st.columns([2, 4, 2, 3])
+        
+        with col1:
+            if st.session_state.page > 0:
+                if st.button("⬅️ Previous"):
+                    st.session_state.page = 0  # Reset to first page when changing page size
+                    st.rerun()
+        # Display pagination info
+        st.caption(f"Showing {start_record:,} - {end_record:,} of {total_count:,} records")
+        with col2:
+            st.write(f"Page {st.session_state.page + 1} of {max(1, total_pages)}")
+        
+        with col3:
+            if (st.session_state.page + 1) * st.session_state.per_page < total_count:
+                if st.button("Next ➡️"):
+                    st.session_state.page += 1
+                    st.rerun()
+        
+        with col4:
+            # Rows per page selector
+            new_per_page = st.selectbox(
+                "Rows per page:",
+                options=[50, 100, 200, 500],
+                index=[50, 100, 200, 500].index(st.session_state.per_page) if st.session_state.per_page in [50, 100, 200, 500] else 1,
+                key='per_page_selector',
+                label_visibility="collapsed"
+            )
+            if new_per_page != st.session_state.per_page:
+                st.session_state.per_page = new_per_page
+                st.session_state.page = 0  # Reset to first page when changing page size
+                st.rerun()
         
         # Add download button
         csv = df.to_csv(index=False).encode('utf-8')
         st.download_button(
-            label="📥 Download as CSV",
+            label="📥 Download Current Page as CSV",
             data=csv,
-            file_name=f"farm_ponds_{datetime.now().strftime('%Y%m%d')}.csv",
+            file_name=f"farm_ponds_page_{st.session_state.page + 1}_{datetime.now().strftime('%Y%m%d')}.csv",
             mime='text/csv',
         )
     else:
