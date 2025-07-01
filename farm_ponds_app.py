@@ -23,7 +23,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def fetch_ponds_data(query_params, skip=0, limit=100, applied_filters=None, total_count=None):
+def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, total_count=None):
     """Fetch data from the farm ponds API with pagination support"""
     url = "https://ax-ai-reports-912635809422.asia-south1.run.app/api/getFarmPonds"
     
@@ -31,19 +31,22 @@ def fetch_ponds_data(query_params, skip=0, limit=100, applied_filters=None, tota
         # Create the payload with the query parameters and pagination
         try:
             payload = {
-                "query": query_params,
-                "skip": skip,
-                "limit": limit
+                "query": query_params
             }
             if total_count:
                 payload["totalCount"] = total_count
             # Add appliedFilters only if provided and not empty
             if applied_filters:
                 payload["appliedFilters"] = applied_filters
+            if skip:
+                payload["skip"] = skip
+            if limit:
+                payload["limit"] = limit
         except Exception as e:
             st.error(f"Error creating payload: {str(e)}")
             return pd.DataFrame(), "", 0, []
             
+        print(payload)
         response = requests.post(url, json=payload)
         response.raise_for_status()
         data = response.json()
@@ -137,6 +140,8 @@ def main():
             st.session_state.page = 0  # Reset to first page on new search
             st.session_state.applied_filters = None
             st.session_state.total_count = None
+            st.session_state.skip = None
+            st.session_state.limit = None
     
     # Calculate skip based on current page
     skip = st.session_state.page * st.session_state.per_page
