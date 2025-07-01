@@ -120,6 +120,12 @@ def main():
         st.session_state.per_page = 100
     if 'applied_filters' not in st.session_state:
         st.session_state.applied_filters = None
+    if 'total_count' not in st.session_state:
+        st.session_state.total_count = None
+    if 'skip' not in st.session_state:
+        st.session_state.skip = None
+    if 'limit' not in st.session_state:
+        st.session_state.limit = None
     
     # Default query parameters
     default_query = 'ponds with > 80 doc but not done any harvest'
@@ -140,18 +146,22 @@ def main():
             st.session_state.page = 0  # Reset to first page on new search
             st.session_state.applied_filters = None
             st.session_state.total_count = None
-            st.session_state.skip = None
-            st.session_state.limit = None
     
     # Calculate skip based on current page
     skip = st.session_state.page * st.session_state.per_page
+    
+    # Only include pagination parameters if not the first page
+    pagination_params = {}
+    if st.session_state.page > 0:
+        pagination_params['skip'] = skip
+    if st.session_state.per_page != 100:  # Only include if not default
+        pagination_params['limit'] = st.session_state.per_page
     
     # Fetch data with caching and pagination
     with st.spinner('Loading data...'):
         df, cypher_query, total_count, response_filters = fetch_ponds_data(
             query_params,
-            skip=skip,
-            limit=st.session_state.per_page,
+            **pagination_params,
             total_count=st.session_state.get('total_count'),
             applied_filters=st.session_state.get('applied_filters')
         )
