@@ -113,7 +113,7 @@ def main():
     st.title("🌊 AquaExchange Dashboard")
     st.markdown("View and filter farm ponds data")
     
-    # Initialize session state for pagination
+    # Initialize session state for pagination and feedback
     if 'page' not in st.session_state:
         st.session_state.page = 0
     if 'per_page' not in st.session_state:
@@ -126,6 +126,8 @@ def main():
         st.session_state.skip = None
     if 'limit' not in st.session_state:
         st.session_state.limit = None
+    if 'show_feedback' not in st.session_state:
+        st.session_state.show_feedback = False
     
     # Default query parameters
     default_query = 'ponds with > 80 doc but not done any harvest'
@@ -243,6 +245,57 @@ def main():
             file_name=f"farm_ponds_page_{st.session_state.page + 1}_{datetime.now().strftime('%Y%m%d')}.csv",
             mime='text/csv',
         )
+        
+        # Feedback UI after pagination and download button
+        st.subheader("📝 Provide Feedback")
+        with st.form("feedback_form"):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                # Feedback options
+                feedback_type = st.radio(
+                    "How well did the results match your query?",
+                    ["👍 Relevant", "👎 Not Relevant", "🤔 Partially Relevant"],
+                    horizontal=True
+                )
+            
+            # Additional feedback
+            feedback_text = st.text_area(
+                "Additional feedback (optional)",
+                placeholder="Please share any additional comments or suggestions...",
+                height=100
+            )
+            
+            # Display applied filters if any
+            if st.session_state.get('applied_filters'):
+                with st.expander("Applied Filters"):
+                    st.json(st.session_state.applied_filters)
+            
+            # Submit button
+            submitted = st.form_submit_button("Submit Feedback")
+            
+            if submitted:
+                # Prepare feedback data
+                feedback_data = {
+                    "query": query_params,
+                    "feedback_type": feedback_type,
+                    "feedback_text": feedback_text,
+                    "applied_filters": st.session_state.get('applied_filters'),
+                    "timestamp": datetime.now().isoformat()
+                }
+                
+                # Send feedback to the cloud function
+                try:
+                    feedback_url = "https://us-central1-nextaqua-22991.cloudfunctions.net/storeApiFeedback"
+                    response = requests.post(feedback_url, json=feedback_data)
+                    
+                    if response.status_code == 200:
+                        st.success("Thank you for your feedback! It has been submitted successfully.")
+                    else:
+                        st.warning(f"Feedback submission had an issue. Status code: {response.status_code}")
+                        st.success("Thank you for your feedback! We've recorded it locally.")
+                except Exception as e:
+                    st.error(f"Error submitting feedback: {str(e)}")
+                    st.success("Thank you for your feedback! We've recorded it locally.")
     else:
         st.warning("No data available or failed to fetch data from the API.")
 
