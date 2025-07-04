@@ -2,11 +2,12 @@ import streamlit as st
 import requests
 import pandas as pd
 from datetime import datetime
+from PIL import Image
+import os
 
 # Set page config
 st.set_page_config(
     page_title="AquaExchange Dashboard",
-    page_icon="🌊",
     layout="wide"
 )
 
@@ -109,9 +110,19 @@ def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, 
         return pd.DataFrame(), "", 0, []
 
 def main():
-    # Main app content
-    st.title("🌊 AquaExchange Dashboard")
-    st.markdown("View and filter farm ponds data")
+    # Main app content with logo
+    col1, col2 = st.columns([1, 5])
+    
+    with col1:
+        # Load and display the logo
+        logo_path = "aqualogo.png"
+        if os.path.exists(logo_path):
+            logo = Image.open(logo_path)
+            st.image(logo, width=100)
+    
+    with col2:
+        st.title("🌊 AquaExchange Dashboard")
+        st.markdown("View and filter farm ponds data")
     
     # Initialize session state for pagination and feedback
     if 'page' not in st.session_state:
