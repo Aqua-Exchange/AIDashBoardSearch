@@ -184,19 +184,36 @@ def main():
     if st.session_state.per_page != 100:  # Only include if not default
         pagination_params['limit'] = st.session_state.per_page
     
-    # Fetch data with caching and pagination
-    with st.spinner('Loading data...'):
-        df, cypher_query, total_count, response_filters, total_acres = fetch_ponds_data(
-            query_params,
-            **pagination_params,
-            total_count=st.session_state.get('total_count'),
-            total_acres=st.session_state.get('total_acres'),
-            applied_filters=st.session_state.get('applied_filters')
-        )
-        
-        # Store applied filters from the response if available
-        if response_filters:
-            st.session_state.applied_filters = response_filters
+    # Only fetch data if we're not in the middle of a form submission
+    if 'feedback_submitted' not in st.session_state or not st.session_state.feedback_submitted:
+        with st.spinner('Loading data...'):
+            try:
+                df, cypher_query, total_count, response_filters, total_acres = fetch_ponds_data(
+                    query_params,
+                    **pagination_params,
+                    total_count=st.session_state.get('total_count'),
+                    total_acres=st.session_state.get('total_acres'),
+                    applied_filters=st.session_state.get('applied_filters')
+                )
+                
+                # Store data in session state for later use
+                st.session_state.current_data = df
+                st.session_state.total_count = total_count
+                st.session_state.total_acres = total_acres
+                
+                # Store applied filters from the response if available
+                if response_filters:
+                    st.session_state.applied_filters = response_filters
+            except Exception as e:
+                st.error(f"Error loading data: {str(e)}")
+                df = pd.DataFrame()
+                total_count = 0
+                total_acres = 0
+    else:
+        # Use existing data from session state
+        df = st.session_state.get('current_data', pd.DataFrame())
+        total_count = st.session_state.get('total_count', 0)
+        total_acres = st.session_state.get('total_acres', 0)
     
     # Display the Cypher query in an expandable section
     if cypher_query and cypher_query.strip():
@@ -281,55 +298,83 @@ def main():
         )
         
         # Feedback UI after pagination and download button
-        st.subheader("📝 Provide Feedback")
-        with st.form("feedback_form"):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                # Feedback options
-                feedback_type = st.radio(
-                    "How well did the results match your query?",
-                    ["👍 Relevant", "👎 Not Relevant", "🤔 Partially Relevant"],
-                    horizontal=True
-                )
+        # st.subheader("📝 Provide Feedback")
+        
+        # # Store form submission state to prevent rerunning API calls
+        # if 'feedback_submitted' not in st.session_state:
+        #     st.session_state.feedback_submitted = False
             
-            # Additional feedback
-            feedback_text = st.text_area(
-                "Additional feedback (optional)",
-                placeholder="Please share any additional comments or suggestions...",
-                height=100
-            )
+        # with st.form("feedback_form"):
+        #     col1, col2 = st.columns([3, 1])
+        #     with col1:
+        #         # Feedback options
+        #         feedback_type = st.radio(
+        #             "How well did the results match your query?",
+        #             ["👍 Relevant", "👎 Not Relevant", "🤔 Partially Relevant"],
+        #             horizontal=True
+        #         )
             
-            # Display applied filters if any
-            if st.session_state.get('applied_filters'):
-                with st.expander("Applied Filters"):
-                    st.json(st.session_state.applied_filters)
+        #     # Additional feedback
+        #     feedback_text = st.text_area(
+        #         "Additional feedback (optional)",
+        #         placeholder="Please share any additional comments or suggestions...",
+        #         height=100
+        #     )
             
-            # Submit button
-            submitted = st.form_submit_button("Submit Feedback")
+        #     # Display applied filters if any
+        #     if st.session_state.get('applied_filters'):
+        #         with st.expander("Applied Filters"):
+        #             st.json(st.session_state.applied_filters)
             
-            if submitted:
-                # Prepare feedback data
-                feedback_data = {
-                    "query": query_params,
-                    "feedback_type": feedback_type,
-                    "feedback_text": feedback_text,
-                    "applied_filters": st.session_state.get('applied_filters'),
-                    "timestamp": datetime.now().isoformat()
-                }
+        #     # Submit button
+        #     submitted = st.form_submit_button("Submit Feedback")
+            
+        #     if submitted and not st.session_state.feedback_submitted:
+        #         st.session_state.feedback_submitted = True
                 
-                # Send feedback to the cloud function
-                try:
-                    feedback_url = "https://us-central1-nextaqua-22991.cloudfunctions.net/storeApiFeedback"
-                    response = requests.post(feedback_url, json=feedback_data)
+        #         # Prepare feedback data
+        #         feedback_data = {
+        #             "query": query_params,
+        #             "feedback_type": feedback_type,
+        #             "feedback_text": feedback_text,
+        #             "applied_filters": st.session_state.get('applied_filters'),
+        #             "timestamp": datetime.now().isoformat()
+        #         }
+                
+        #         # Store feedback locally for backup
+        #         if 'feedback_history' not in st.session_state:
+        #             st.session_state.feedback_history = []
+        #         st.session_state.feedback_history.append(feedback_data)
+                
+        #         try:
+        #             # Just show success message without making API call
+        #             st.success("Thank you for your feedback! It has been recorded.")
                     
-                    if response.status_code == 200:
-                        st.success("Thank you for your feedback! It has been submitted successfully.")
-                    else:
-                        st.warning(f"Feedback submission had an issue. Status code: {response.status_code}")
-                        st.success("Thank you for your feedback! We've recorded it locally.")
-                except Exception as e:
-                    st.error(f"Error submitting feedback: {str(e)}")
-                    st.success("Thank you for your feedback! We've recorded it locally.")
+        #             # Commented out the problematic API call that causes 500 error
+        #             '''
+        #             feedback_url = "https://us-central1-nextaqua-22991.cloudfunctions.net/storeApiFeedback"
+        #             # Set a timeout to prevent hanging
+        #             response = requests.post(feedback_url, json=feedback_data, timeout=5)
+                    
+        #             if response.status_code == 200:
+        #                 st.success("Thank you for your feedback! It has been submitted successfully.")
+        #             else:
+        #                 st.warning(f"Feedback submission had an issue. Status code: {response.status_code}")
+        #                 st.info("Your feedback has been saved locally as a backup.")
+        #             '''
+        #         except Exception as e:
+        #             st.error(f"Unexpected error: {str(e)}")
+        #             st.info("Your feedback has been saved locally.")
+            
+        #     # Show message if already submitted
+        #     elif submitted and st.session_state.feedback_submitted:
+        #         st.info("Your feedback has already been recorded. Thank you!")
+                
+        # Add a button to reset the feedback form if needed
+        # if st.session_state.feedback_submitted:
+        #     if st.button("Submit another feedback"):
+        #         st.session_state.feedback_submitted = False
+        #         st.rerun()
     else:
         st.warning("No data available or failed to fetch data from the API.")
 
