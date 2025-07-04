@@ -8,6 +8,7 @@ import os
 # Set page config
 st.set_page_config(
     page_title="AquaExchange Dashboard",
+    page_icon="",
     layout="wide"
 )
 
@@ -24,7 +25,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, total_count=None):
+def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, total_count=None, total_acres=None):
     """Fetch data from the farm ponds API with pagination support"""
     url = "https://ax-ai-reports-912635809422.asia-south1.run.app/api/getFarmPonds"
     
@@ -36,6 +37,9 @@ def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, 
             }
             if total_count:
                 payload["totalCount"] = total_count
+            if total_acres:
+                payload["totalAcres"] = total_acres
+            
             # Add appliedFilters only if provided and not empty
             if applied_filters:
                 payload["appliedFilters"] = applied_filters
@@ -52,7 +56,7 @@ def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, 
         response.raise_for_status()
         data = response.json()
         
-        # Extract the data array, cypher query, and total count from the response
+        # Extract the data array, cypher query, total count, and total acres from the response
         cypher_query = ""
         response_filters = []
         
@@ -70,6 +74,14 @@ def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, 
             elif 'response' in data and 'totalCount' in data['response']:
                 total_count = int(data['response']['totalCount'])
                 st.session_state.total_count = total_count
+                
+            # Get total acres
+            if 'totalAcres' in data:
+                total_acres = float(data['totalAcres'])
+                st.session_state.total_acres = total_acres
+            elif 'response' in data and 'totalAcres' in data['response']:
+                total_acres = float(data['response']['totalAcres'])
+                st.session_state.total_acres = total_acres
             
             # Get applied filters if available
             if 'appliedFilters' in data and data['appliedFilters']:
@@ -103,11 +115,11 @@ def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, 
                 except Exception as e:
                     st.warning(f"Could not convert column '{col}' to datetime: {str(e)}")
                     continue
-            return df, cypher_query, total_count, response_filters
-        return pd.DataFrame(), cypher_query, total_count, response_filters
+            return df, cypher_query, total_count, response_filters, total_acres if 'total_acres' in locals() else 0
+        return pd.DataFrame(), cypher_query, total_count, response_filters, total_acres if 'total_acres' in locals() else 0
     except Exception as e:
         st.error(f"Error fetching data: {str(e)}")
-        return pd.DataFrame(), "", 0, []
+        return pd.DataFrame(), "", 0, [], 0
 
 def main():
     # Main app content with logo
@@ -133,6 +145,8 @@ def main():
         st.session_state.applied_filters = None
     if 'total_count' not in st.session_state:
         st.session_state.total_count = None
+    if 'total_acres' not in st.session_state:
+        st.session_state.total_acres = None
     if 'skip' not in st.session_state:
         st.session_state.skip = None
     if 'limit' not in st.session_state:
@@ -172,10 +186,11 @@ def main():
     
     # Fetch data with caching and pagination
     with st.spinner('Loading data...'):
-        df, cypher_query, total_count, response_filters = fetch_ponds_data(
+        df, cypher_query, total_count, response_filters, total_acres = fetch_ponds_data(
             query_params,
             **pagination_params,
             total_count=st.session_state.get('total_count'),
+            total_acres=st.session_state.get('total_acres'),
             applied_filters=st.session_state.get('applied_filters')
         )
         
@@ -203,6 +218,10 @@ def main():
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total Ponds", f"{total_count:,}")
+        with col2:
+            # Handle None value for total_acres
+            acres_value = total_acres if total_acres is not None else 0
+            st.metric("Total Acres", f"{acres_value:,.2f}")
         
         # Add index column based on pagination
         if not df.empty:
@@ -215,6 +234,11 @@ def main():
             st.subheader("Ponds Data")
             st.dataframe(df_display, use_container_width=True, height=600)
         
+        # Display record count info
+        st.caption(f"Showing {total_count:,} records total")
+        
+        # Pagination controls are hidden
+        '''
         # Pagination controls with Rows per page selector
         col1, col2, col3, col4 = st.columns([2, 4, 2, 3])
         
@@ -247,6 +271,7 @@ def main():
                 st.session_state.per_page = new_per_page
                 st.session_state.page = 0  # Reset to first page when changing page size
                 st.rerun()
+        '''
         
         # Add download button
         csv = df.to_csv(index=False).encode('utf-8')
