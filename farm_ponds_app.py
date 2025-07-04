@@ -90,7 +90,7 @@ def fetch_ponds_data(query_params, skip=None, limit=None, applied_filters=None, 
             df = pd.DataFrame(data_array)
             # Convert date columns to datetime if they exist (exclude 'DOC' as it's an integer)
             date_columns = [col for col in df.columns 
-                          if any(x in col.lower() for x in ['date', 'lastupdated']) 
+                          if any(x in col.lower() for x in ['datalastupdated','feedlastupdated','nettinglastupdatedat']) 
                           and 'doc' not in col.lower()]
             for col in date_columns:
                 try:
