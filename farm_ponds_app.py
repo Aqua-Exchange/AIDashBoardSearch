@@ -237,8 +237,6 @@ def main():
         # Display record count info
         st.caption(f"Showing {total_count:,} records total")
         
-        # Pagination controls are hidden
-        '''
         # Pagination controls with Rows per page selector
         col1, col2, col3, col4 = st.columns([2, 4, 2, 3])
         
@@ -247,6 +245,7 @@ def main():
                 if st.button("⬅️ Previous"):
                     st.session_state.page = 0  # Reset to first page when changing page size
                     st.rerun()
+        
         # Display pagination info
         st.caption(f"Showing {start_record:,} - {end_record:,} of {total_count:,} records")
         with col2:
@@ -271,7 +270,6 @@ def main():
                 st.session_state.per_page = new_per_page
                 st.session_state.page = 0  # Reset to first page when changing page size
                 st.rerun()
-        '''
         
         # Add download button
         csv = df.to_csv(index=False).encode('utf-8')
