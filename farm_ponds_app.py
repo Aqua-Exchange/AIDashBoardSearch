@@ -153,6 +153,8 @@ def main():
         st.session_state.limit = None
     if 'show_feedback' not in st.session_state:
         st.session_state.show_feedback = False
+    if 'auto_fetch' not in st.session_state:
+        st.session_state.auto_fetch = False
     
     # Default query parameters
     default_query = 'ponds with > 80 doc but not done any harvest'
@@ -173,6 +175,7 @@ def main():
             st.session_state.page = 0  # Reset to first page on new search
             st.session_state.applied_filters = None
             st.session_state.total_count = None
+            st.session_state.auto_fetch = True
     
     # Calculate skip based on current page
     skip = st.session_state.page * st.session_state.per_page
@@ -184,8 +187,8 @@ def main():
     if st.session_state.per_page != 100:  # Only include if not default
         pagination_params['limit'] = st.session_state.per_page
     
-    # Only fetch data if we're not in the middle of a form submission
-    if 'feedback_submitted' not in st.session_state or not st.session_state.feedback_submitted:
+    # Only fetch data if auto_fetch is enabled or the Fetch Data button was clicked
+    if st.session_state.auto_fetch and ('feedback_submitted' not in st.session_state or not st.session_state.feedback_submitted):
         with st.spinner('Loading data...'):
             try:
                 df, cypher_query, total_count, response_filters, total_acres = fetch_ponds_data(
@@ -204,16 +207,23 @@ def main():
                 # Store applied filters from the response if available
                 if response_filters:
                     st.session_state.applied_filters = response_filters
+                    
+                # Reset the auto_fetch flag after successful fetch
+                if st.session_state.auto_fetch and not st.session_state.get('keep_auto_fetch', False):
+                    st.session_state.auto_fetch = False
             except Exception as e:
                 st.error(f"Error loading data: {str(e)}")
                 df = pd.DataFrame()
                 total_count = 0
                 total_acres = 0
+                # Reset the auto_fetch flag after error
+                st.session_state.auto_fetch = False
     else:
-        # Use existing data from session state
+        # Use existing data from session state or initialize empty dataframe
         df = st.session_state.get('current_data', pd.DataFrame())
         total_count = st.session_state.get('total_count', 0)
         total_acres = st.session_state.get('total_acres', 0)
+        cypher_query = ""
     
     # Display the Cypher query in an expandable section
     if cypher_query and cypher_query.strip():
